@@ -1,0 +1,98 @@
+CodeFrame Web — editor no navegador, render real no servidor local
+======================================================================
+
+O que é
+-------
+A mesma experiência visual do CodeFrame (editor com abas HTML/CSS/JS,
+preview ao vivo, timeline) só que rodando como um app web LOCAL
+(localhost, via Flask) — e quando você clica em "Renderizar", quem faz
+o trabalho pesado não é o navegador: é o próprio servidor Python, que
+abre um Chromium headless de verdade (Playwright) e tira um screenshot
+de cada frame, depois codifica com ffmpeg. Isso resolve o problema do
+blur/backdrop-filter (que o html2canvas não suportava) porque agora é
+o motor de renderização real do Chromium.
+
+Nada sai da sua máquina: o Flask só escuta em 127.0.0.1 (localhost),
+não é exposto para a rede.
+
+
+Instalação (Windows)
+---------------------
+1. Tenha Python 3.9+ instalado (python.org, marcar "Add to PATH").
+
+2. Abra o terminal nesta pasta e crie um ambiente virtual:
+     python -m venv venv
+     venv\\Scripts\\activate
+
+3. Instale as dependências:
+     pip install -r requirements.txt
+
+4. Baixe o Chromium do Playwright (só na primeira vez):
+     playwright install chromium
+
+(O ffmpeg não precisa ser instalado à parte — o imageio-ffmpeg já
+resolve isso sozinho.)
+
+
+Instalação (macOS / Linux)
+---------------------------
+python3 -m venv venv
+source venv/bin/activate
+pip install -r requirements.txt
+playwright install chromium
+
+
+Como rodar
+----------
+python app.py
+
+Depois abra no navegador:
+  http://127.0.0.1:5000
+
+Edite a cena nas abas HTML/CSS/JS (mesma API onFrame de sempre),
+acompanhe o preview ao vivo, ajuste resolução/fps/duração/qualidade,
+e clique em "Renderizar vídeo". A barra de progresso e o log mostram
+o andamento em tempo real (consultando o servidor), e o vídeo final
+aparece pronto para assistir/baixar assim que terminar.
+
+
+Estrutura do projeto
+---------------------
+app.py                -> servidor Flask (rotas da API + serve o editor)
+render_worker.py       -> lógica de renderização (Playwright + ffmpeg)
+templates/index.html   -> o editor (HTML/CSS/JS embutidos)
+jobs/                   -> pasta onde cada render fica temporariamente
+                           (frames e mp4 de cada job, em subpastas
+                           por job_id; pode apagar com segurança
+                           quando o servidor não estiver rodando)
+
+
+API interna (caso queira automatizar)
+---------------------------------------
+POST /api/render
+  body JSON: { html, css, js, width, height, fps, duration, crf, preset }
+  resposta: { job_id }
+
+GET /api/status/<job_id>
+  resposta: { status, progress, message, ... }
+  status pode ser: queued | rendering | done | error | cancelled
+
+POST /api/cancel/<job_id>
+  cancela um render em andamento
+
+GET /api/download/<job_id>?filename=meuvideo
+  baixa o mp4 pronto (só funciona quando status == done)
+
+
+Por que essa arquitetura
+--------------------------
+- Renderização real do Chromium (não html2canvas): blur, backdrop-filter,
+  gradientes, sombras, tudo sai fiel ao CSS.
+- Captura determinística e instantânea por frame (não depende de tempo
+  real nem de diálogo de permissão de tela, como a captura de tela do
+  navegador).
+- UX de editor com preview ao vivo continua boa, porque o preview (só
+  para feedback enquanto você edita) roda no navegador normalmente —
+  só o render final é que vai para o servidor.
+- Continua "rodando localmente": é um servidor Flask no seu próprio
+  Windows, sem depender de nenhum site externo.

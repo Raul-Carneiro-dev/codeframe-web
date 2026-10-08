@@ -1,0 +1,549 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<title>CodeFrame Web — vídeo via código (render local com Playwright)</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#0b0d0f;
+    --panel:#111417;
+    --panel2:#161a1e;
+    --line:#232830;
+    --text:#e7ebee;
+    --dim:#7c8794;
+    --accent:#9dff3a;
+    --accent-dim:#4d6f22;
+    --warn:#ff5d5d;
+    --blue:#5ac8ff;
+    --mono:'JetBrains Mono', monospace;
+    --disp:'Space Grotesk', sans-serif;
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;height:100%;background:var(--bg);color:var(--text);font-family:var(--mono);}
+  ::selection{background:var(--accent);color:#0b0d0f;}
+  #app{display:grid;grid-template-columns:1fr 1fr;grid-template-rows:52px 1fr;height:100vh;}
+  header{
+    grid-column:1/3;
+    display:flex;align-items:center;justify-content:space-between;
+    padding:0 18px;border-bottom:1px solid var(--line);background:var(--panel);
+  }
+  .brand{display:flex;align-items:center;gap:10px;font-family:var(--disp);font-weight:700;font-size:17px;letter-spacing:.2px;}
+  .brand .dot{width:9px;height:9px;background:var(--accent);border-radius:2px;transform:rotate(45deg);box-shadow:0 0 12px var(--accent);}
+  .brand small{font-family:var(--mono);font-weight:400;color:var(--dim);font-size:11px;margin-left:6px;}
+  .hint{color:var(--dim);font-size:11.5px;}
+
+  /* LEFT: editors */
+  #editors{border-right:1px solid var(--line);display:flex;flex-direction:column;min-width:0;}
+  .tabs{display:flex;border-bottom:1px solid var(--line);background:var(--panel);}
+  .tab{padding:10px 16px;font-size:12.5px;color:var(--dim);cursor:pointer;border-right:1px solid var(--line);user-select:none;}
+  .tab.active{color:var(--accent);background:var(--panel2);}
+  .editor-wrap{flex:1;position:relative;min-height:0;}
+  textarea.code{
+    width:100%;height:100%;resize:none;border:none;outline:none;
+    background:var(--panel2);color:var(--text);font-family:var(--mono);font-size:13px;line-height:1.55;
+    padding:14px;display:none;tab-size:2;white-space:pre;overflow:auto;
+  }
+  textarea.code.active{display:block;}
+
+  /* RIGHT: preview + controls */
+  #right{display:flex;flex-direction:column;min-width:0;}
+  #stage-area{flex:1;display:flex;align-items:center;justify-content:center;background:
+      repeating-conic-gradient(#0e1114 0% 25%, #0b0d0f 0% 50%) 50% / 22px 22px;
+      position:relative;overflow:auto;padding:20px;}
+  #stage-frame-holder{box-shadow:0 0 0 1px var(--line), 0 30px 60px -20px rgba(0,0,0,.7);background:#000;}
+  iframe#stage{border:0;display:block;background:#000;}
+
+  .panel{border-top:1px solid var(--line);background:var(--panel);padding:14px 16px;}
+  .row{display:flex;gap:10px;align-items:center;flex-wrap:wrap;}
+  .field{display:flex;flex-direction:column;gap:4px;}
+  .field label{font-size:10px;color:var(--dim);text-transform:uppercase;letter-spacing:.06em;}
+  select,input[type=number],input[type=text]{
+    background:#0e1114;border:1px solid var(--line);color:var(--text);
+    font-family:var(--mono);font-size:12.5px;padding:7px 8px;border-radius:5px;outline:none;
+  }
+  select:focus,input:focus{border-color:var(--accent-dim);}
+  input[type=number]{width:70px;}
+  input[type=text]{width:150px;}
+  .spacer{flex:1;}
+
+  button{
+    font-family:var(--mono);font-size:12.5px;font-weight:500;border:1px solid var(--line);
+    background:#0e1114;color:var(--text);padding:8px 14px;border-radius:5px;cursor:pointer;
+    display:flex;align-items:center;gap:6px;
+  }
+  button:hover{border-color:var(--dim);}
+  button.primary{background:var(--accent);color:#0b0d0f;border-color:var(--accent);font-weight:700;}
+  button.primary:hover{filter:brightness(1.08);}
+  button:disabled{opacity:.4;cursor:not-allowed;}
+  button.icon{padding:8px 10px;}
+
+  .timeline{display:flex;align-items:center;gap:10px;}
+  input[type=range]{flex:1;accent-color:var(--accent);}
+  .tcode{font-size:11.5px;color:var(--dim);width:110px;text-align:right;}
+
+  #renderPanel{border-top:1px solid var(--line);background:var(--panel2);padding:14px 16px;}
+  #progressWrap{height:6px;background:#0e1114;border-radius:4px;overflow:hidden;margin:10px 0 6px;border:1px solid var(--line);}
+  #progressBar{height:100%;width:0%;background:linear-gradient(90deg,var(--accent-dim),var(--accent));transition:width .15s;}
+  #log{
+    font-size:11px;color:var(--dim);max-height:96px;overflow-y:auto;white-space:pre-wrap;
+    background:#0e1114;border:1px solid var(--line);border-radius:5px;padding:8px 10px;margin-top:8px;display:none;
+  }
+  #log.show{display:block;}
+  #resultRow{display:none;align-items:center;gap:10px;margin-top:10px;}
+  #resultRow.show{display:flex;}
+  #resultRow video{max-height:100px;border-radius:5px;border:1px solid var(--line);}
+  #resultRow a{color:var(--accent);text-decoration:none;font-size:12.5px;border-bottom:1px dashed var(--accent-dim);}
+
+  .status-dot{width:7px;height:7px;border-radius:50%;background:var(--dim);}
+  .status-dot.ok{background:var(--accent);}
+  .status-dot.busy{background:var(--blue);animation:pulse 1s infinite;}
+  .status-dot.err{background:var(--warn);}
+  @keyframes pulse{0%,100%{opacity:1}50%{opacity:.3}}
+
+  ::-webkit-scrollbar{width:10px;height:10px;}
+  ::-webkit-scrollbar-thumb{background:#242a31;border-radius:6px;}
+  ::-webkit-scrollbar-track{background:transparent;}
+</style>
+</head>
+<body>
+<div id="app">
+  <header>
+    <div class="brand"><span class="dot"></span>CodeFrame Web<small>vídeo via HTML/CSS/JS · servidor local (Flask + Playwright)</small></div>
+    <div class="hint">Preview roda no navegador · render final roda no Chromium headless do servidor</div>
+  </header>
+
+  <div id="editors">
+    <div class="tabs">
+      <div class="tab active" data-tab="html">index.html</div>
+      <div class="tab" data-tab="css">style.css</div>
+      <div class="tab" data-tab="js">scene.js</div>
+    </div>
+    <div class="editor-wrap">
+      <textarea id="code-html" class="code active" spellcheck="false"></textarea>
+      <textarea id="code-css" class="code" spellcheck="false"></textarea>
+      <textarea id="code-js" class="code" spellcheck="false"></textarea>
+    </div>
+    <div class="panel" style="display:flex;flex-direction:column;gap:8px;">
+      <div class="row">
+        <div class="field"><label>Largura</label><input type="number" id="width" value="1280" min="16" step="1"></div>
+        <div class="field"><label>Altura</label><input type="number" id="height" value="720" min="16" step="1"></div>
+        <div class="field"><label>Preset</label>
+          <select id="preset">
+            <option value="1280x720">16:9 · 1280×720</option>
+            <option value="1920x1080">16:9 · 1920×1080</option>
+            <option value="1080x1920">9:16 · 1080×1920</option>
+            <option value="1080x1080">1:1 · 1080×1080</option>
+            <option value="custom" selected>Custom</option>
+          </select>
+        </div>
+        <div class="field"><label>FPS</label>
+          <select id="fps"><option>24</option><option selected>30</option><option>60</option></select>
+        </div>
+        <div class="field"><label>Duração (s)</label><input type="number" id="duration" value="4" min="0.5" step="0.5"></div>
+        <div class="spacer"></div>
+        <div class="field"><label>Total de frames</label><div id="frameCount" style="font-size:12.5px;color:var(--accent);padding-top:6px;">120</div></div>
+      </div>
+    </div>
+  </div>
+
+  <div id="right">
+    <div id="stage-area">
+      <div id="stage-frame-holder"><iframe id="stage" sandbox="allow-scripts allow-same-origin"></iframe></div>
+    </div>
+
+    <div class="panel">
+      <div class="timeline">
+        <button class="icon" id="playBtn" title="Play/Pause">▶</button>
+        <input type="range" id="scrub" min="0" max="119" value="0" step="1">
+        <div class="tcode" id="tcode">0.000s / 4.000s</div>
+      </div>
+    </div>
+
+    <div id="renderPanel">
+      <div class="row">
+        <span class="status-dot" id="statusDot"></span>
+        <span id="statusText" style="font-size:12px;color:var(--dim);">pronto para renderizar (servidor local)</span>
+        <div class="spacer"></div>
+        <div class="field"><label>Qualidade (CRF)</label>
+          <select id="quality">
+            <option value="30">Baixa (arquivo pequeno)</option>
+            <option value="23" selected>Média</option>
+            <option value="18">Alta</option>
+            <option value="14">Máxima (arquivo grande)</option>
+          </select>
+        </div>
+        <div class="field"><label>Velocidade de codificação</label>
+          <select id="speed">
+            <option value="ultrafast">Ultra rápida</option>
+            <option value="fast">Rápida</option>
+            <option value="medium" selected>Média</option>
+            <option value="slow">Lenta (melhor compressão)</option>
+          </select>
+        </div>
+        <div class="field"><label>Nome do arquivo</label><input type="text" id="filename" value="video"></div>
+        <button class="primary" id="renderBtn">Renderizar vídeo</button>
+        <button id="cancelBtn" style="display:none;">Cancelar</button>
+      </div>
+      <div id="progressWrap"><div id="progressBar"></div></div>
+      <div id="log"></div>
+      <div id="resultRow"><video id="resultVideo" controls></video><a id="resultLink" download>baixar .mp4</a></div>
+    </div>
+  </div>
+</div>
+
+<script>
+const $ = (id) => document.getElementById(id);
+
+const DEFAULT_HTML = `<div class="wrap">
+  <div class="glass-card">
+    <h1 id="title">CodeFrame Web</h1>
+    <p id="sub">render de verdade via Playwright</p>
+  </div>
+</div>`;
+
+const DEFAULT_CSS = `html, body {
+  width: 100%; height: 100%;
+  display: flex; align-items: center; justify-content: center;
+  overflow: hidden;
+  background: radial-gradient(circle at 30% 30%, #ff6b6b, #4834d4 60%, #1e1b4b 100%);
+  font-family: 'Space Grotesk', sans-serif;
+}
+.wrap { position: relative; width: 100%; height: 100%; }
+.glass-card {
+  position: absolute; top: 50%; left: 50%;
+  transform: translate(-50%, -50%);
+  width: 640px; height: 320px;
+  border-radius: 28px;
+  background: rgba(255,255,255,0.12);
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+  border: 1px solid rgba(255,255,255,0.35);
+  box-shadow: 0 20px 60px rgba(0,0,0,0.35);
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+}
+h1 { margin: 0; color: #fff; font-size: 52px; letter-spacing: -1px; text-shadow: 0 4px 20px rgba(0,0,0,0.3); }
+p { margin: 10px 0 0; color: rgba(255,255,255,0.85); font-size: 18px; font-family: monospace; }
+`;
+
+const DEFAULT_JS = `const card = document.querySelector('.glass-card');
+const title = document.getElementById('title');
+
+function easeOutCubic(x) { return 1 - Math.pow(1 - x, 3); }
+
+onFrame((t, frame, totalFrames, fps) => {
+  const p = Math.min(t / 1.0, 1);
+  const scale = 0.85 + 0.15 * easeOutCubic(p);
+  const opacity = Math.min(t / 0.6, 1);
+
+  card.style.transform = \`translate(-50%, -50%) scale(\${scale})\`;
+  card.style.opacity = opacity;
+
+  const wobble = Math.sin(t * 1.4) * 4;
+  title.style.transform = \`rotate(\${wobble}deg)\`;
+});
+`;
+
+$('code-html').value = DEFAULT_HTML;
+$('code-css').value = DEFAULT_CSS;
+$('code-js').value = DEFAULT_JS;
+
+/* ---------- tabs ---------- */
+document.querySelectorAll('.tab').forEach(tab=>{
+  tab.addEventListener('click', ()=>{
+    document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));
+    document.querySelectorAll('textarea.code').forEach(t=>t.classList.remove('active'));
+    tab.classList.add('active');
+    $('code-'+tab.dataset.tab).classList.add('active');
+  });
+});
+document.querySelectorAll('textarea.code').forEach(ta=>{
+  ta.addEventListener('keydown', e=>{
+    if(e.key === 'Tab'){
+      e.preventDefault();
+      const s = ta.selectionStart, en = ta.selectionEnd;
+      ta.value = ta.value.slice(0,s) + '  ' + ta.value.slice(en);
+      ta.selectionStart = ta.selectionEnd = s+2;
+    }
+  });
+});
+
+/* ---------- resolution / fps / duration ---------- */
+const widthEl = $('width'), heightEl = $('height'), fpsEl = $('fps'), durationEl = $('duration'), presetEl = $('preset');
+
+presetEl.addEventListener('change', ()=>{
+  if(presetEl.value === 'custom') return;
+  const [w,h] = presetEl.value.split('x').map(Number);
+  widthEl.value = w; heightEl.value = h;
+  layoutStage();
+});
+[widthEl, heightEl].forEach(el=>el.addEventListener('input', ()=>{ presetEl.value='custom'; layoutStage(); }));
+
+function totalFrames(){
+  return Math.max(1, Math.round(Number(fpsEl.value) * Number(durationEl.value)));
+}
+function updateFrameCount(){
+  const tf = totalFrames();
+  $('frameCount').textContent = tf;
+  $('scrub').max = tf - 1;
+  if(Number($('scrub').value) > tf-1) $('scrub').value = 0;
+  updateTcode();
+}
+[fpsEl, durationEl].forEach(el=>el.addEventListener('input', updateFrameCount));
+
+/* ---------- stage / iframe (preview local, só para feedback visual) ---------- */
+const stage = $('stage');
+const holder = $('stage-frame-holder');
+
+function layoutStage(){
+  const w = Number(widthEl.value), h = Number(heightEl.value);
+  const areaW = $('stage-area').clientWidth - 40;
+  const areaH = $('stage-area').clientHeight - 40;
+  const scale = Math.min(areaW / w, areaH / h, 1);
+  stage.style.width = w + 'px';
+  stage.style.height = h + 'px';
+  stage.style.transform = `scale(${scale})`;
+  stage.style.transformOrigin = 'top left';
+  holder.style.width = (w*scale) + 'px';
+  holder.style.height = (h*scale) + 'px';
+}
+window.addEventListener('resize', layoutStage);
+
+const INJECT_HEAD = `
+<script>
+  window.__fps = FPS_PLACEHOLDER;
+  window.__totalFrames = TOTAL_PLACEHOLDER;
+  window.__handlers = [];
+  window.onFrame = function(cb){ window.__handlers.push(cb); };
+  window.__seek = function(frame){
+    window.__currentFrame = frame;
+    const t = frame / window.__fps;
+    window.__handlers.forEach(h=>{ try{ h(t, frame, window.__totalFrames, window.__fps); }catch(e){ console.error(e); } });
+  };
+  window.addEventListener('message', (e)=>{
+    if(e.data && e.data.type === 'seek'){
+      window.__seek(e.data.frame);
+      requestAnimationFrame(()=>requestAnimationFrame(()=>{
+        parent.postMessage({type:'seeked', frame:e.data.frame}, '*');
+      }));
+    }
+  });
+<\/script>`;
+
+function buildSrcdoc(){
+  const w = Number(widthEl.value), h = Number(heightEl.value);
+  const html = $('code-html').value;
+  const css = $('code-css').value;
+  const js = $('code-js').value;
+  const head = INJECT_HEAD
+    .replace('FPS_PLACEHOLDER', Number(fpsEl.value))
+    .replace('TOTAL_PLACEHOLDER', totalFrames());
+  return `<!DOCTYPE html><html><head><meta charset="UTF-8">
+<style>*{margin:0;padding:0;box-sizing:border-box;} html,body{width:${w}px;height:${h}px;overflow:hidden;} ${css}</style>
+${head}
+</head><body>${html}
+<script>
+try {
+${js}
+} catch(e){ console.error(e); }
+window.__seek(window.__currentFrame || 0);
+<\/script>
+</body></html>`;
+}
+
+let pendingSeekResolve = null;
+window.addEventListener('message', (e)=>{
+  if(e.data && e.data.type === 'seeked' && pendingSeekResolve){
+    pendingSeekResolve(e.data.frame);
+    pendingSeekResolve = null;
+  }
+});
+
+function seekFrame(frame, timeoutMs=4000){
+  return new Promise((resolve)=>{
+    let done = false;
+    pendingSeekResolve = (f)=>{ if(!done){ done=true; resolve(f); } };
+    stage.contentWindow.postMessage({type:'seek', frame}, '*');
+    setTimeout(()=>{ if(!done){ done=true; pendingSeekResolve=null; resolve(frame); } }, timeoutMs);
+  });
+}
+
+let reloadTimer = null;
+function reloadStage(){
+  clearTimeout(reloadTimer);
+  reloadTimer = setTimeout(()=>{
+    const cur = Number($('scrub').value) || 0;
+    stage.onload = ()=>{ seekFrame(cur); };
+    stage.srcdoc = buildSrcdoc();
+  }, 250);
+}
+['code-html','code-css','code-js'].forEach(id=>$(id).addEventListener('input', reloadStage));
+[widthEl, heightEl, fpsEl, durationEl].forEach(el=>el.addEventListener('input', ()=>{ updateFrameCount(); reloadStage(); }));
+
+/* ---------- scrubber / playback ---------- */
+function updateTcode(){
+  const fps = Number(fpsEl.value);
+  const frame = Number($('scrub').value);
+  const t = frame / fps;
+  const dur = totalFrames() / fps;
+  $('tcode').textContent = `${t.toFixed(3)}s / ${dur.toFixed(3)}s`;
+}
+$('scrub').addEventListener('input', async ()=>{
+  updateTcode();
+  await seekFrame(Number($('scrub').value));
+});
+
+let playing = false, playRAF = null, playStart = 0, playStartFrame = 0;
+$('playBtn').addEventListener('click', ()=>{
+  playing = !playing;
+  $('playBtn').textContent = playing ? '⏸' : '▶';
+  if(playing){
+    playStart = performance.now();
+    playStartFrame = Number($('scrub').value);
+    const fps = Number(fpsEl.value);
+    const tf = totalFrames();
+    const tick = async ()=>{
+      if(!playing) return;
+      const elapsed = (performance.now() - playStart)/1000;
+      let frame = Math.round(playStartFrame + elapsed*fps) % tf;
+      $('scrub').value = frame;
+      updateTcode();
+      await seekFrame(frame);
+      playRAF = requestAnimationFrame(tick);
+    };
+    playRAF = requestAnimationFrame(tick);
+  } else {
+    cancelAnimationFrame(playRAF);
+  }
+});
+
+function init(){
+  updateFrameCount();
+  layoutStage();
+  stage.onload = ()=>{ seekFrame(0); };
+  stage.srcdoc = buildSrcdoc();
+}
+init();
+
+/* ============================================================
+   RENDERIZAÇÃO — envia a cena para o servidor local, que roda
+   Playwright (Chromium headless real) + ffmpeg e devolve o mp4.
+   ============================================================ */
+
+const statusDot = $('statusDot'), statusText = $('statusText');
+const logEl = $('log');
+function log(msg){
+  logEl.classList.add('show');
+  logEl.textContent += msg + '\\n';
+  logEl.scrollTop = logEl.scrollHeight;
+}
+
+let currentJobId = null;
+let pollTimer = null;
+
+$('renderBtn').addEventListener('click', startRender);
+$('cancelBtn').addEventListener('click', cancelRender);
+
+async function startRender(){
+  if(playing){ playing=false; $('playBtn').textContent='▶'; cancelAnimationFrame(playRAF); }
+
+  $('renderBtn').disabled = true;
+  $('cancelBtn').style.display = 'inline-flex';
+  $('resultRow').classList.remove('show');
+  logEl.textContent = '';
+  logEl.classList.add('show');
+  $('progressBar').style.width = '0%';
+
+  statusDot.className = 'status-dot busy';
+  statusText.textContent = 'enviando cena para o servidor local...';
+
+  const payload = {
+    html: $('code-html').value,
+    css: $('code-css').value,
+    js: $('code-js').value,
+    width: Number(widthEl.value),
+    height: Number(heightEl.value),
+    fps: Number(fpsEl.value),
+    duration: Number(durationEl.value),
+    crf: Number($('quality').value),
+    preset: $('speed').value,
+  };
+
+  try{
+    const res = await fetch('/api/render', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify(payload),
+    });
+    const data = await res.json();
+    if(!res.ok){ throw new Error(data.error || 'falha ao iniciar o render'); }
+
+    currentJobId = data.job_id;
+    log('Job criado: ' + currentJobId);
+    pollStatus();
+  }catch(err){
+    statusDot.className = 'status-dot err';
+    statusText.textContent = 'erro ao iniciar o render — veja o log';
+    log('Erro: ' + err.message);
+    resetRenderButtons();
+  }
+}
+
+function pollStatus(){
+  clearInterval(pollTimer);
+  pollTimer = setInterval(async ()=>{
+    if(!currentJobId) return;
+    try{
+      const res = await fetch(`/api/status/${currentJobId}`);
+      const job = await res.json();
+      if(!res.ok){ throw new Error(job.error || 'job não encontrado'); }
+
+      $('progressBar').style.width = (job.progress || 0) + '%';
+      statusText.textContent = job.message || job.status;
+
+      if(job.status === 'done'){
+        clearInterval(pollTimer);
+        statusDot.className = 'status-dot ok';
+        const filename = ($('filename').value || 'video').replace(/[^a-z0-9_\-]/gi,'_');
+        const url = `/api/download/${currentJobId}?filename=${encodeURIComponent(filename)}`;
+        $('resultVideo').src = url;
+        $('resultLink').href = url;
+        $('resultLink').download = filename + '.mp4';
+        $('resultRow').classList.add('show');
+        log('Renderização concluída.');
+        resetRenderButtons();
+      } else if(job.status === 'error'){
+        clearInterval(pollTimer);
+        statusDot.className = 'status-dot err';
+        log('Erro no servidor: ' + job.message);
+        resetRenderButtons();
+      } else if(job.status === 'cancelled'){
+        clearInterval(pollTimer);
+        statusDot.className = 'status-dot';
+        log('Cancelado.');
+        resetRenderButtons();
+      }
+    }catch(err){
+      clearInterval(pollTimer);
+      statusDot.className = 'status-dot err';
+      log('Erro ao consultar status: ' + err.message);
+      resetRenderButtons();
+    }
+  }, 400);
+}
+
+async function cancelRender(){
+  if(!currentJobId) return;
+  try{ await fetch(`/api/cancel/${currentJobId}`, {method:'POST'}); }catch(e){}
+  log('Pedido de cancelamento enviado...');
+}
+
+function resetRenderButtons(){
+  $('renderBtn').disabled = false;
+  $('cancelBtn').style.display = 'none';
+}
+</script>
+</body>
+</html>
